@@ -1,7 +1,9 @@
 package practice2;
 
+import practice1.PacketData;
 import practice1.PacketMessage;
 import practice1.PacketRequest;
+import practice3.NetworkPacket;
 
 import java.util.HashMap;
 import java.util.Map;
@@ -14,41 +16,71 @@ public class Processor implements Runnable {
     private static final int SERVER_SOURCE = 0;
 
     private final Map<String, Integer> products = new HashMap<>();
+    private final Map<String, PacketRequest> udpProcessedPackets = new HashMap<>();
 
-    private final SharedQueue<PacketMessage> messagesToProcess;
-    private final SharedQueue<PacketRequest> responsesToEncrypt;
+    private final SharedQueue<NetworkPacket> packetsToProcess;
+    private final SharedQueue<NetworkPacket> packetsToEncrypt;
 
     public Processor(
-            SharedQueue<PacketMessage> messagesToProcess,
-            SharedQueue<PacketRequest> responsesToEncrypt
+            SharedQueue<NetworkPacket> packetsToProcess,
+            SharedQueue<NetworkPacket> packetsToEncrypt
     ) {
-        this.messagesToProcess = messagesToProcess;
-        this.responsesToEncrypt = responsesToEncrypt;
+        this.packetsToProcess = packetsToProcess;
+        this.packetsToEncrypt = packetsToEncrypt;
     }
 
     @Override
     public void run() {
         try {
-            PacketMessage message;
+            NetworkPacket packet;
 
-            while ((message = messagesToProcess.take()) != null) {
-                PacketMessage responseMessage = process(message);
-                PacketRequest responseRequest = new PacketRequest(SERVER_SOURCE, responseMessage);
+            while ((packet = packetsToProcess.take()) != null) {
+                PacketRequest responseRequest = createResponse(packet);
 
-                responsesToEncrypt.put(responseRequest);
+                packet.setResponseRequest(responseRequest);
+                packetsToEncrypt.put(packet);
 
                 System.out.println("Processor: processed message");
             }
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
         } finally {
-            responsesToEncrypt.close();
+            packetsToEncrypt.close();
         }
+    }
+
+    private synchronized PacketRequest createResponse(NetworkPacket packet) {
+        if (packet.isUdp()) {
+            String packetKey = createUdpPacketKey(packet);
+
+            if (udpProcessedPackets.containsKey(packetKey)) {
+                return udpProcessedPackets.get(packetKey);
+            }
+
+            PacketMessage responseMessage = process(packet.getPacketData().getPacketMessage());
+            PacketRequest responseRequest = new PacketRequest(SERVER_SOURCE, responseMessage);
+
+            udpProcessedPackets.put(packetKey, responseRequest);
+
+            return responseRequest;
+        }
+
+        PacketMessage responseMessage = process(packet.getPacketData().getPacketMessage());
+
+        return new PacketRequest(SERVER_SOURCE, responseMessage);
+    }
+
+    private String createUdpPacketKey(NetworkPacket packet) {
+        PacketData packetData = packet.getPacketData();
+
+        return packet.getClientKey() + ":" +
+                packetData.getSource() + ":" +
+                packetData.getPacketId();
     }
 
     public synchronized PacketMessage process(PacketMessage message) {
         if (message.getCommandType() == GET_QUANTITY) {
-            return getQuantity(message);
+            return getQuantityResponse(message);
         }
 
         String[] data = message.getMessage().split(";");
@@ -75,7 +107,7 @@ public class Processor implements Runnable {
         return response(message, "ERROR;unknown command");
     }
 
-    private PacketMessage getQuantity(PacketMessage message) {
+    private PacketMessage getQuantityResponse(PacketMessage message) {
         String productName = message.getMessage();
         int quantity = products.getOrDefault(productName, 0);
 

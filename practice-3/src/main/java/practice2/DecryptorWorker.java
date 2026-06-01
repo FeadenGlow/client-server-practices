@@ -2,38 +2,38 @@ package practice2;
 
 import practice1.Decryptor;
 import practice1.PacketData;
-import practice1.PacketMessage;
+import practice3.NetworkPacket;
 
 public class DecryptorWorker implements Runnable {
-    private final SharedQueue<byte[]> packetsToDecrypt;
-    private final SharedQueue<PacketMessage> messagesToProcess;
+    private final SharedQueue<NetworkPacket> packetsToDecrypt;
+    private final SharedQueue<NetworkPacket> packetsToProcess;
     private final Decryptor decryptor = new Decryptor();
 
     public DecryptorWorker(
-            SharedQueue<byte[]> packetsToDecrypt,
-            SharedQueue<PacketMessage> messagesToProcess
+            SharedQueue<NetworkPacket> packetsToDecrypt,
+            SharedQueue<NetworkPacket> packetsToProcess
     ) {
         this.packetsToDecrypt = packetsToDecrypt;
-        this.messagesToProcess = messagesToProcess;
+        this.packetsToProcess = packetsToProcess;
     }
 
     @Override
     public void run() {
         try {
-            byte[] packet;
+            NetworkPacket packet;
 
             while ((packet = packetsToDecrypt.take()) != null) {
-                PacketData packetData = decryptor.readPacket(packet);
-                PacketMessage message = packetData.getPacketMessage();
+                PacketData packetData = decryptor.readPacket(packet.getData());
 
-                messagesToProcess.put(message);
+                packet.setPacketData(packetData);
+                packetsToProcess.put(packet);
 
                 System.out.println("Decryptor: decrypted packet");
             }
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
         } finally {
-            messagesToProcess.close();
+            packetsToProcess.close();
         }
     }
 }
