@@ -12,7 +12,7 @@ public class SharedQueue<T> {
         this.capacity = capacity;
     }
 
-    public synchronized void produce(T value) throws InterruptedException {
+    public synchronized void put(T value) throws InterruptedException {
         while (queue.size() == capacity && !closed) {
             wait();
         }
@@ -25,7 +25,7 @@ public class SharedQueue<T> {
         notifyAll();
     }
 
-    public synchronized T consume() throws InterruptedException {
+    public synchronized T take() throws InterruptedException {
         while (queue.isEmpty() && !closed) {
             wait();
         }
@@ -36,6 +36,7 @@ public class SharedQueue<T> {
 
         T value = queue.poll();
         notifyAll();
+
         return value;
     }
 

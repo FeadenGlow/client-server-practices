@@ -20,13 +20,10 @@ public class ServerApplicationTest {
 
         server.start();
 
-        server.send(createPacket(clientEncryptor, Processor.ADD_QUANTITY, "buckwheat;10"));
-
-        server.send(createPacket(clientEncryptor, Processor.ADD_QUANTITY, "buckwheat;20"));
-
-        server.send(createPacket(clientEncryptor, Processor.REMOVE_QUANTITY, "buckwheat;5"));
-
-        server.send(createPacket(clientEncryptor, Processor.GET_QUANTITY, "buckwheat"));
+        server.receivePacket(createPacket(clientEncryptor, Processor.ADD_QUANTITY, "buckwheat;10"));
+        server.receivePacket(createPacket(clientEncryptor, Processor.ADD_QUANTITY, "buckwheat;20"));
+        server.receivePacket(createPacket(clientEncryptor, Processor.REMOVE_QUANTITY, "buckwheat;5"));
+        server.receivePacket(createPacket(clientEncryptor, Processor.GET_QUANTITY, "buckwheat"));
 
         server.finishSending();
         server.waitUntilFinished();
@@ -38,8 +35,9 @@ public class ServerApplicationTest {
                 .hasSize(4);
 
         byte[] lastEncryptedResponse = server.getSender().getSentMessages().get(3);
-
-        PacketMessage lastResponse = new Decryptor().readPacket(lastEncryptedResponse).getPacketMessage();
+        PacketMessage lastResponse = new Decryptor()
+                .readPacket(lastEncryptedResponse)
+                .getPacketMessage();
 
         assertThat(lastResponse.getMessage())
                 .isEqualTo("OK;quantity=25");
@@ -53,6 +51,7 @@ public class ServerApplicationTest {
         server.start();
 
         int threadCount = 50;
+
         List<byte[]> packets = new ArrayList<>();
         List<Thread> threads = new ArrayList<>();
 
@@ -63,7 +62,7 @@ public class ServerApplicationTest {
         for (byte[] packet : packets) {
             Thread thread = new Thread(() -> {
                 try {
-                    server.send(packet);
+                    server.receivePacket(packet);
                 } catch (InterruptedException e) {
                     Thread.currentThread().interrupt();
                 }
@@ -87,9 +86,33 @@ public class ServerApplicationTest {
                 .hasSize(50);
     }
 
+    @Test
+    public void shouldNotRemoveMoreThanAvailable() throws InterruptedException {
+        ServerApplication server = new ServerApplication();
+        Encryptor clientEncryptor = new Encryptor();
+
+        server.start();
+
+        server.receivePacket(createPacket(clientEncryptor, Processor.ADD_QUANTITY, "buckwheat;10"));
+        server.receivePacket(createPacket(clientEncryptor, Processor.REMOVE_QUANTITY, "buckwheat;20"));
+
+        server.finishSending();
+        server.waitUntilFinished();
+
+        assertThat(server.getProcessor().getQuantity("buckwheat"))
+                .isEqualTo(10);
+
+        byte[] lastEncryptedResponse = server.getSender().getSentMessages().get(1);
+        PacketMessage lastResponse = new Decryptor()
+                .readPacket(lastEncryptedResponse)
+                .getPacketMessage();
+
+        assertThat(lastResponse.getMessage())
+                .isEqualTo("ERROR;not enough products");
+    }
+
     private byte[] createPacket(Encryptor encryptor, int commandType, String text) {
         PacketMessage message = new PacketMessage(commandType, 1, text);
-
         PacketRequest request = new PacketRequest(1, message);
 
         return encryptor.enty_take(request);
