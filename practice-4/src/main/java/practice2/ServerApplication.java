@@ -1,6 +1,7 @@
 package practice2;
 
 import practice3.NetworkPacket;
+import practice4.ProductService;
 
 public class ServerApplication {
     private final SharedQueue<NetworkPacket> packetsFromNetwork = new SharedQueue<>(100);
@@ -9,17 +10,35 @@ public class ServerApplication {
     private final SharedQueue<NetworkPacket> packetsToEncrypt = new SharedQueue<>(100);
     private final SharedQueue<NetworkPacket> packetsToSend = new SharedQueue<>(100);
 
-    private final Receiver receiver = new Receiver(packetsFromNetwork, packetsToDecrypt);
-    private final DecryptorWorker decryptorWorker = new DecryptorWorker(packetsToDecrypt, packetsToProcess);
-    private final Processor processor = new Processor(packetsToProcess, packetsToEncrypt);
-    private final EncryptorWorker encryptorWorker = new EncryptorWorker(packetsToEncrypt, packetsToSend);
-    private final Sender sender = new Sender(packetsToSend);
+    private final Receiver receiver;
+    private final DecryptorWorker decryptorWorker;
+    private final Processor processor;
+    private final EncryptorWorker encryptorWorker;
+    private final Sender sender;
 
-    private final Thread receiverThread = new Thread(receiver, "Receiver");
-    private final Thread decryptorThread = new Thread(decryptorWorker, "Decryptor");
-    private final Thread processorThread = new Thread(processor, "Processor");
-    private final Thread encryptorThread = new Thread(encryptorWorker, "Encryptor");
-    private final Thread senderThread = new Thread(sender, "Sender");
+    private final Thread receiverThread;
+    private final Thread decryptorThread;
+    private final Thread processorThread;
+    private final Thread encryptorThread;
+    private final Thread senderThread;
+
+    public ServerApplication() {
+        this(new ProductService());
+    }
+
+    public ServerApplication(ProductService productService) {
+        receiver = new Receiver(packetsFromNetwork, packetsToDecrypt);
+        decryptorWorker = new DecryptorWorker(packetsToDecrypt, packetsToProcess);
+        processor = new Processor(packetsToProcess, packetsToEncrypt, productService);
+        encryptorWorker = new EncryptorWorker(packetsToEncrypt, packetsToSend);
+        sender = new Sender(packetsToSend);
+
+        receiverThread = new Thread(receiver, "Receiver");
+        decryptorThread = new Thread(decryptorWorker, "Decryptor");
+        processorThread = new Thread(processor, "Processor");
+        encryptorThread = new Thread(encryptorWorker, "Encryptor");
+        senderThread = new Thread(sender, "Sender");
+    }
 
     public void start() {
         receiverThread.start();

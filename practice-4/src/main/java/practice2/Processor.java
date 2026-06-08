@@ -4,6 +4,8 @@ import practice1.PacketData;
 import practice1.PacketMessage;
 import practice1.PacketRequest;
 import practice3.NetworkPacket;
+import practice4.Product;
+import practice4.ProductService;
 
 import java.util.HashMap;
 import java.util.Map;
@@ -15,7 +17,7 @@ public class Processor implements Runnable {
 
     private static final int SERVER_SOURCE = 0;
 
-    private final Map<String, Integer> products = new HashMap<>();
+    private final ProductService productService;
     private final Map<String, PacketRequest> udpProcessedPackets = new HashMap<>();
 
     private final SharedQueue<NetworkPacket> packetsToProcess;
@@ -25,8 +27,17 @@ public class Processor implements Runnable {
             SharedQueue<NetworkPacket> packetsToProcess,
             SharedQueue<NetworkPacket> packetsToEncrypt
     ) {
+        this(packetsToProcess, packetsToEncrypt, new ProductService());
+    }
+
+    public Processor(
+            SharedQueue<NetworkPacket> packetsToProcess,
+            SharedQueue<NetworkPacket> packetsToEncrypt,
+            ProductService productService
+    ) {
         this.packetsToProcess = packetsToProcess;
         this.packetsToEncrypt = packetsToEncrypt;
+        this.productService = productService;
     }
 
     @Override
@@ -79,60 +90,77 @@ public class Processor implements Runnable {
     }
 
     public synchronized PacketMessage process(PacketMessage message) {
-        if (message.getCommandType() == GET_QUANTITY) {
-            return getQuantityResponse(message);
+        try {
+            if (message.getCommandType() == GET_QUANTITY) {
+                return getQuantityResponse(message);
+            }
+
+            String[] data = message.getMessage().split(";");
+
+            if (data.length != 2) {
+                return response(message, "ERROR;wrong message format");
+            }
+
+            String productName = data[0];
+            int amount = parseAmount(data[1]);
+
+            if (amount <= 0) {
+                return response(message, "ERROR;wrong amount");
+            }
+
+            if (message.getCommandType() == ADD_QUANTITY) {
+                return addQuantity(message, productName, amount);
+            }
+
+            if (message.getCommandType() == REMOVE_QUANTITY) {
+                return removeQuantity(message, productName, amount);
+            }
+
+            return response(message, "ERROR;unknown command");
+        } catch (Exception e) {
+            return response(message, "ERROR;" + e.getMessage());
         }
-
-        String[] data = message.getMessage().split(";");
-
-        if (data.length != 2) {
-            return response(message, "ERROR;wrong message format");
-        }
-
-        String productName = data[0];
-        int amount = parseAmount(data[1]);
-
-        if (amount <= 0) {
-            return response(message, "ERROR;wrong amount");
-        }
-
-        if (message.getCommandType() == ADD_QUANTITY) {
-            return addQuantity(message, productName, amount);
-        }
-
-        if (message.getCommandType() == REMOVE_QUANTITY) {
-            return removeQuantity(message, productName, amount);
-        }
-
-        return response(message, "ERROR;unknown command");
     }
 
     private PacketMessage getQuantityResponse(PacketMessage message) {
         String productName = message.getMessage();
-        int quantity = products.getOrDefault(productName, 0);
+        int quantity = getQuantity(productName);
 
         return response(message, "OK;quantity=" + quantity);
     }
 
     private PacketMessage addQuantity(PacketMessage message, String productName, int amount) {
-        int currentQuantity = products.getOrDefault(productName, 0);
-        int newQuantity = currentQuantity + amount;
+        Product product = productService.findByName(productName);
 
-        products.put(productName, newQuantity);
+        if (product == null) {
+            productService.create(new Product(productName, "default", amount, 0));
+
+            return response(message, "OK;quantity=" + amount);
+        }
+
+        int newQuantity = product.getQuantity() + amount;
+
+        product.setQuantity(newQuantity);
+        productService.update(product);
 
         return response(message, "OK;quantity=" + newQuantity);
     }
 
     private PacketMessage removeQuantity(PacketMessage message, String productName, int amount) {
-        int currentQuantity = products.getOrDefault(productName, 0);
+        Product product = productService.findByName(productName);
 
-        if (currentQuantity < amount) {
+        if (product == null) {
             return response(message, "ERROR;not enough products");
         }
 
-        int newQuantity = currentQuantity - amount;
+        if (product.getQuantity() < amount) {
+            return response(message, "ERROR;not enough products");
+        }
 
-        products.put(productName, newQuantity);
+        int newQuantity = product.getQuantity() - amount;
+
+        product.setQuantity(newQuantity);
+        productService.update(product);
 
         return response(message, "OK;quantity=" + newQuantity);
     }
@@ -146,7 +174,13 @@ public class Processor implements Runnable {
     }
 
     public synchronized int getQuantity(String productName) {
-        return products.getOrDefault(productName, 0);
+        Product product = productService.findByName(productName);
+
+        if (product == null) {
+            return 0;
+        }
+
+        return product.getQuantity();
     }
 
     private PacketMessage response(PacketMessage request, String text) {

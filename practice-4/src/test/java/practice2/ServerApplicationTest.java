@@ -1,21 +1,45 @@
 package practice2;
 
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+
 import practice1.Decryptor;
 import practice1.Encryptor;
 import practice1.PacketMessage;
 import practice1.PacketRequest;
+import practice4.ProductService;
 
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
 public class ServerApplicationTest {
+    private Path dbPath;
+    private ProductService productService;
+
+    @BeforeEach
+    public void setUp() throws IOException {
+        Files.createDirectories(Path.of("target"));
+
+        dbPath = Files.createTempFile(Path.of("target"), "server-test-", ".db");
+        productService = new ProductService("jdbc:sqlite:" + dbPath.toAbsolutePath());
+
+        productService.deleteAll();
+    }
+
+    @AfterEach
+    public void tearDown() throws IOException {
+        Files.deleteIfExists(dbPath);
+    }
 
     @Test
     public void shouldProcessThreeCommands() throws InterruptedException {
-        ServerApplication server = new ServerApplication();
+        ServerApplication server = new ServerApplication(productService);
         Encryptor clientEncryptor = new Encryptor();
 
         server.start();
@@ -45,7 +69,7 @@ public class ServerApplicationTest {
 
     @Test
     public void shouldProcessMessagesSentFromManyThreads() throws InterruptedException {
-        ServerApplication server = new ServerApplication();
+        ServerApplication server = new ServerApplication(productService);
         Encryptor clientEncryptor = new Encryptor();
 
         server.start();
@@ -88,7 +112,7 @@ public class ServerApplicationTest {
 
     @Test
     public void shouldNotRemoveMoreThanAvailable() throws InterruptedException {
-        ServerApplication server = new ServerApplication();
+        ServerApplication server = new ServerApplication(productService);
         Encryptor clientEncryptor = new Encryptor();
 
         server.start();
